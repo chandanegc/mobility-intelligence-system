@@ -1,0 +1,26 @@
+export const PROCESSING_VERSION = "v1";
+
+export const SPEED = {
+  STAY_MAX: 1.5,   
+  WALK_MAX: 7,   
+  TRIP_START: 5, 
+  TRIP_STOP: 1   
+};
+
+export const TIME = {
+  EXPECTED_GAP_SEC: 3,
+  RESET_GAP_SEC: 60,
+  TRIP_STOP_SEC: 5 * 60,
+  STAY_MIN_SEC: 2 * 60
+};
+
+export const DISTANCE = {
+  STAY_RADIUS_M: 50,
+  SMALL_DRIFT_M: 30,
+  IMPOSSIBLE_JUMP_M: 2000
+};
+
+export const QUALITY = {
+  MAX_ACCEPTABLE_ACCURACY_M: 100,
+  MAX_REALISTIC_SPEED_KMPH: 180
+};
