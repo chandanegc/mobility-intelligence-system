@@ -230,15 +230,15 @@ function createBaseDoc({
     soc: 85,
     igs: 1,
 
-    day_of_week: weekday,
-    is_weekend: ["Saturday", "Sunday"].includes(weekday),
-    time_of_day: getTimeOfDay(date),
+    // day_of_week: weekday,
+    // is_weekend: ["Saturday", "Sunday"].includes(weekday),
+    // time_of_day: getTimeOfDay(date),
 
     processed: false,
 
-    route_type: routeType,
-    movement_type: movementType,
-    place_type: placeType,
+    // route_type: routeType,
+    // movement_type: movementType,
+    // place_type: placeType,
 
     point_index: pointIndex
   };
@@ -651,7 +651,7 @@ async function main() {
   await connectDB();
 
   // Fresh data chahiye to uncomment karo
-  // await GpsRaw.deleteMany({ user_id: userId });
+  await GpsRaw.deleteMany({ user_id: userId });
 
   for (let cycle = 1; cycle <= CYCLES_TO_GENERATE; cycle++) {
     await generateOneDailyCycle(cycle);

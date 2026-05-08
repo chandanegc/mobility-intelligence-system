@@ -1,0 +1,5 @@
+_id,cluster_id,user_id,avg_arrival_hour,avg_departure_hour,avg_duration_sec,day_visit_ratio,night_visit_ratio,place_type,visit_count,weekday_ratio
+69fc3ad92a183adca3e4b687,"C0","U123",13,18,17991,1,0,"OFFICE",2,1
+69fc3ad92a183adca3e4b688,"C5","U123",9.5,12,9639,0.25,0.5,"HOME",4,1
+69fc86802a183adca3e89301,"C0","U001",10.64,15.98,16644.48,0.5,0,"OFFICE",44,1
+69fc86802a183adca3e89302,"C3","U001",13,14,2888.45,1,0,"GYM",22,1
