@@ -20,4 +20,4 @@ async function checkDateRange() {
     await mongoose.connection.close();
 }
 
-checkDateRange().catch(console.error);
+checkDateRange().catch(console.error); 

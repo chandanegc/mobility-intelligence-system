@@ -24,7 +24,8 @@ const BATCH_SIZE = 5000;
 // 35 cycles approx can cross 10 lakh.
 const CYCLES_TO_GENERATE = 1;
 
-let currentStartTime = new Date("2026-05-04T09:15:00+05:30").getTime();
+let currentStartTime = new Date("2026-05-04T21:06:00+05:30").getTime();
+console.log(currentStartTime);
 let globalPointIndex = 0;
 
 let batch = [];
@@ -496,8 +497,8 @@ async function generateOneDailyCycle(cycleNo) {
 
   await generateTripWithStayToDB(
     [[28.6477, 77.33436]],
-    0,
-    30,
+    9,
+    7,
     {
       vin: `HOME_HOME_${cycleNo}`,
       routeType: "home_stay_morning",
@@ -634,8 +635,8 @@ async function generateOneDailyCycle(cycleNo) {
 
   await generateTripWithStayToDB(
     noidaCityCenterToHome,
-    8,
-    20,
+    5,
+    6,
     {
       vin: `NOIDA_CITY_CENTER_HOME_${cycleNo}`,
       routeType: "noida_city_center_to_home",

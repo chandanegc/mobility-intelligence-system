@@ -5,8 +5,12 @@ import express from 'express';
 import connectDB from '../config/db.js';
 import routes from './routes/index.js';
 
+import cors from 'cors';
+
 const app  = express();
 const PORT = process.env.PORT || 3000;
+
+app.use(cors('*'));
 
 // ES module fix (__dirname)
 const __filename = fileURLToPath(import.meta.url);
@@ -48,7 +52,7 @@ app.get('/', (req, res) => res.json({
 // ── Boot ───────────────────────────────────────────────────
 connectDB().then(() => {
     app.listen(PORT, () => {
-        console.log(`🛰  Running: http://localhost:${PORT}`);
+        console.log(`🛰  Running: http://10.10.22.15:${PORT}`);
     });
 }).catch(err => {
     console.error('DB connection failed:', err);

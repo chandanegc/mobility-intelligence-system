@@ -7,6 +7,7 @@ import {
   exportMlData
 } from '../controllers/mlController.js';
 import ClusterVisit from '../models/clusterVisit.model.js';
+import UserCluster from '../models/userCluster.model.js';
 import { getNextPlacePrediction } from '../controllers/predictionController.js';
 
 const router = express.Router();
@@ -52,22 +53,67 @@ router.get('/cluster-visits/polyline', async (req, res) => {
             _id: 0,
             center: 1,
             center_location: 1,
+            cluster_id: 1,
             day_of_week: 1,
             time_of_day: 1,
             date: 1,
+            duration_sec: 1,
+            point_count: 1,
+            user_id: 1,
             visit_end: 1,
             visit_start: 1
         })
             .sort({ visit_start: 1 })
             .lean();
 
+        const clusterIds = [...new Set(visits.map(visit => visit.cluster_id).filter(Boolean))];
+        const userIds = [...new Set(visits.map(visit => visit.user_id).filter(Boolean))];
+        const clusterQuery = {
+            cluster_id: { $in: clusterIds }
+        };
+
+        if (userIds.length) {
+            clusterQuery.user_id = { $in: userIds };
+        }
+
+        const clusters = clusterIds.length
+            ? await UserCluster.find(clusterQuery, {
+                _id: 0,
+                cluster_id: 1,
+                place_name: 1,
+                place_type: 1,
+                total_points: 1,
+                user_id: 1,
+                visit_count: 1
+            }).lean()
+            : [];
+        const clusterById = new Map();
+
+        clusters.forEach(cluster => {
+            clusterById.set(`${cluster.user_id}:${cluster.cluster_id}`, cluster);
+            clusterById.set(cluster.cluster_id, cluster);
+        });
+
         const points = visits
             .map(visit => {
+                const cluster = clusterById.get(`${visit.user_id}:${visit.cluster_id}`) ||
+                    clusterById.get(visit.cluster_id);
+                const clusterName = cluster?.place_name || cluster?.place_type || visit.cluster_id;
+                const commonFields = {
+                    cluster_id: visit.cluster_id,
+                    cluster_name: clusterName,
+                    duration_sec: visit.duration_sec,
+                    point_count: visit.point_count,
+                    total_cluster_points: cluster?.total_points,
+                    visit_count: cluster?.visit_count
+                };
+
                 if (
                     typeof visit.center?.lat === 'number' &&
                     typeof visit.center?.lng === 'number'
                 ) {
                     return {
+                        ...commonFields,
                         lat: visit.center.lat,
                         lng: visit.center.lng,
                         day_of_week: visit.day_of_week,
@@ -87,6 +133,7 @@ router.get('/cluster-visits/polyline', async (req, res) => {
                     typeof coordinates[1] === 'number'
                 ) {
                     return {
+                        ...commonFields,
                         lat: coordinates[1],
                         lng: coordinates[0],
                         day_of_week: visit.day_of_week,
