@@ -1,9 +1,14 @@
+import os
 from pymongo import MongoClient, ASCENDING, GEOSPHERE
 
-MONGO_URL = "mongodb://10.10.21.44:27017/"
-DB_NAME = "gps_tracking_ai"
+# Keep defaults aligned with Node service (.env)
+DEFAULT_MONGO_URL = "mongodb://10.10.21.44:27017/"
+DEFAULT_DB_NAME = "gps_tracking_ai"
 
-client = MongoClient(MONGO_URL)
+MONGO_URL = os.environ.get("MONGO_URL", DEFAULT_MONGO_URL)
+DB_NAME = os.environ.get("DB_NAME", DEFAULT_DB_NAME)
+
+client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=5000)
 db = client[DB_NAME]
 
 gps_processed_col = db["gps_processed"]

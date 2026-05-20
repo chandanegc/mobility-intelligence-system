@@ -21,6 +21,69 @@ def calculate_radius(center, points):
 
     return round(max_radius, 2)
 
+def _weighted_center_from_cells(cells):
+    """
+    Robust-ish weighted center.
+
+    Problem:
+    A simple weighted mean over all cells can drift if a cluster accidentally
+    includes a few far-but-non-noise cells (e.g. due to sparse sampling).
+
+    Strategy:
+    - Anchor on the densest cell (max count)
+    - Keep only cells within a tight radius of the anchor (default 120m)
+    - If that filtered set covers enough points, compute weighted mean on it,
+      else fall back to weighted mean on all cells.
+    """
+    if not cells:
+        return {"lat": None, "lng": None}, 0, "empty"
+
+    # ensure numeric counts
+    for c in cells:
+        c["__count"] = int(c.get("count") or 0)
+
+    total_points = sum(c["__count"] for c in cells)
+    if total_points <= 0:
+        return {"lat": None, "lng": None}, 0, "no_points"
+
+    anchor = max(cells, key=lambda c: c["__count"])
+    anchor_center = anchor.get("center") or {}
+    a_lat = anchor_center.get("lat")
+    a_lng = anchor_center.get("lng")
+
+    # If anchor is missing for some reason, fall back to mean over all cells
+    if a_lat is None or a_lng is None:
+        center_lat = sum(c["center"]["lat"] * c["__count"] for c in cells) / total_points
+        center_lng = sum(c["center"]["lng"] * c["__count"] for c in cells) / total_points
+        return {"lat": round(center_lat, 7), "lng": round(center_lng, 7)}, total_points, "weighted_mean_all"
+
+    # Tight radius: align with trip service "same place" tolerance-ish.
+    # This is intentionally > EPS (50m) to allow realistic GPS drift, but << 200m.
+    KEEP_WITHIN_METERS = 120
+
+    kept = []
+    kept_points = 0
+    for c in cells:
+        cc = c.get("center") or {}
+        lat = cc.get("lat")
+        lng = cc.get("lng")
+        if lat is None or lng is None or c["__count"] <= 0:
+            continue
+        if haversine_meters(a_lat, a_lng, lat, lng) <= KEEP_WITHIN_METERS:
+            kept.append(c)
+            kept_points += c["__count"]
+
+    # If the dense core represents a meaningful portion of the cluster, use it.
+    # Otherwise, fall back to the full weighted mean.
+    if kept and kept_points >= max(int(0.5 * total_points), 1):
+        center_lat = sum(c["center"]["lat"] * c["__count"] for c in kept) / kept_points
+        center_lng = sum(c["center"]["lng"] * c["__count"] for c in kept) / kept_points
+        return {"lat": round(center_lat, 7), "lng": round(center_lng, 7)}, total_points, "weighted_mean_core_120m"
+
+    center_lat = sum(c["center"]["lat"] * c["__count"] for c in cells) / total_points
+    center_lng = sum(c["center"]["lng"] * c["__count"] for c in cells) / total_points
+    return {"lat": round(center_lat, 7), "lng": round(center_lng, 7)}, total_points, "weighted_mean_all"
+
 
 def rebuild_user_clusters(user_id, run_id):
     """
@@ -58,22 +121,10 @@ def rebuild_user_clusters(user_id, run_id):
     updated = 0
 
     for cluster_id, cells in grouped.items():
-        total_points = sum(int(c["count"]) for c in cells)
-
-        center_lat = (
-            sum(c["center"]["lat"] * int(c["count"]) for c in cells)
-            / total_points
-        )
-
-        center_lng = (
-            sum(c["center"]["lng"] * int(c["count"]) for c in cells)
-            / total_points
-        )
-
-        center = {
-            "lat": round(center_lat, 7),
-            "lng": round(center_lng, 7)
-        }
+        center, total_points, center_method = _weighted_center_from_cells(cells)
+        if center["lat"] is None or center["lng"] is None:
+            # nothing useful to write
+            continue
 
         visits = list(
             cluster_visits_col.find(
@@ -171,6 +222,7 @@ def rebuild_user_clusters(user_id, run_id):
                 "type": "Point",
                 "coordinates": [center["lng"], center["lat"]]
             },
+            "center_method": center_method,
 
             "total_points": int(total_points),
 
@@ -213,6 +265,22 @@ def rebuild_user_clusters(user_id, run_id):
                 }
             },
             upsert=True
+        )
+
+        cluster_visits_col.update_many(
+            {
+                "user_id": user_id,
+                "cluster_id": cluster_id
+            },
+            {
+                "$set": {
+                    "center": center,
+                    "center_location": {
+                        "type": "Point",
+                        "coordinates": [center["lng"], center["lat"]]
+                    }
+                }
+            }
         )
 
         updated += 1
