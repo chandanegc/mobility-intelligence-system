@@ -374,6 +374,34 @@
                 ]);
             }
 
+            function getClusterConfidence(point) {
+                return getFirstValue(point, [
+                    'place_type_confidence',
+                    'placeTypeConfidence',
+                    'cluster_confidence',
+                    'clusterConfidence',
+                    'confidence'
+                ]);
+            }
+
+            function formatConfidence(confidenceValue) {
+                if (confidenceValue === null) {
+                    return null;
+                }
+
+                var confidence = Number(confidenceValue);
+
+                if (Number.isNaN(confidence)) {
+                    return String(confidenceValue);
+                }
+
+                if (confidence <= 1) {
+                    confidence *= 100;
+                }
+
+                return Math.round(confidence) + '%';
+            }
+
             function getMarkerPosition(point, duplicateIndex, duplicateCount) {
                 var lat = Number(point.lat);
                 var lng = Number(point.lng);
@@ -438,11 +466,13 @@
                     var duration = getVisitDuration(point);
                     var clusterName = getClusterName(point, 'Point ' + label);
                     var pointCount = getClusterPointCount(point);
+                    var confidence = formatConfidence(getClusterConfidence(point));
                     var visitCount = getPointVisitCount(point);
                     var popupHtml = [
                         '<div>',
                         '<strong>Point ' + label + '</strong><br>',
                         'Cluster: ' + clusterName + '<br>',
+                        confidence !== null ? 'Confidence: ' + confidence + '<br>' : '',
                         pointCount !== null ? 'Point Count: ' + pointCount + '<br>' : '',
                         'Day: ' + (point.day_of_week || '-') + '<br>',
                         'Time: ' + (point.time_of_day || '-') + '<br>',
@@ -504,6 +534,7 @@ console.log('egc');
                     var duration = getVisitDuration(point);
                     var clusterName = getClusterName(point, 'Point ' + label);
                     var pointCount = getClusterPointCount(point);
+                    var confidence = formatConfidence(getClusterConfidence(point));
                     var visitCount = getPointVisitCount(point);
 
                     return [
@@ -511,6 +542,7 @@ console.log('egc');
                         '<div class="point-title">Point ' + label + ' - ' + clusterName + '</div>',
                         '<div class="point-meta">',
                         'Cluster: ' + clusterName + '<br>',
+                        confidence !== null ? 'Confidence: ' + confidence + '<br>' : '',
                         pointCount !== null ? 'Point Count: ' + pointCount + '<br>' : '',
                         'Day: ' + (point.day_of_week || '-') + '<br>',
                         'Time: ' + (point.time_of_day || '-') + '<br>',

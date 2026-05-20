@@ -43,6 +43,9 @@ app.get('/', (req, res) => res.json({
     endpoints: {
         map:             'GET  /map',
         generate:        'POST /api/generate',
+        userLogin:       'POST /api/user/login',
+        userDataCreate:  'POST /api/user/data',
+        userDataGet:     'GET  /api/user/data?user_id=U123',
         stats:           'GET  /api/stats',
         clear:           'DELETE /api/clear',
         journeySimulate: 'POST /api/journey/simulate'

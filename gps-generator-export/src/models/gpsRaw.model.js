@@ -15,6 +15,7 @@ const pointSchema = {
 const gpsRawSchema = new mongoose.Schema(
   {
     user_id: { type: String, required: true, index: true },
+    device_id: { type: String, index: true },
     vin: { type: String },
     device_type: { type: String, default: "mobile" },
 
@@ -50,6 +51,7 @@ const gpsRawSchema = new mongoose.Schema(
 
 gpsRawSchema.index({ location: "2dsphere" });
 gpsRawSchema.index({ user_id: 1, gps_TimeStamp: 1 });
+gpsRawSchema.index({ device_id: 1, gps_TimeStamp: 1 });
 gpsRawSchema.index({ processed: 1, gps_TimeStamp: 1 });
 
 const GpsRaw = mongoose.model("GpsRaw", gpsRawSchema);

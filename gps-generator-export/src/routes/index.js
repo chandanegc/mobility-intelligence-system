@@ -9,6 +9,11 @@ import {
 import ClusterVisit from '../models/clusterVisit.model.js';
 import UserCluster from '../models/userCluster.model.js';
 import { getNextPlacePrediction } from '../controllers/predictionController.js';
+import {
+    createUserGpsData,
+    getUserGpsData,
+    loginUser
+} from '../controllers/userController.js';
 
 const router = express.Router();
 
@@ -27,6 +32,24 @@ function formatVisitTime(timestampSec) {
 }
 
 // ── GPS Data Generator ────────────────────────────────────────────────────────
+
+/**
+ * POST /api/user/login
+ * Body: { user_id, device_id, vin?, device_type? }
+ */
+router.post('/user/login', loginUser);
+
+/**
+ * POST /api/user/data
+ * Body: { user_id, device_id, lat, lng, accuracy?, altitude?, speed?, heading?, gps_timestamp? }
+ */
+router.post('/user/data', createUserGpsData);
+
+/**
+ * GET /api/user/data?user_id=U123&limit=100
+ * Returns recent GPS data for a user or device.
+ */
+router.get('/user/data', getUserGpsData);
 
 /**
  * POST /api/generate
@@ -81,6 +104,7 @@ router.get('/cluster-visits/polyline', async (req, res) => {
                 _id: 0,
                 cluster_id: 1,
                 place_name: 1,
+                place_type_confidence: 1,
                 place_type: 1,
                 total_points: 1,
                 user_id: 1,
@@ -104,6 +128,7 @@ router.get('/cluster-visits/polyline', async (req, res) => {
                     cluster_name: clusterName,
                     duration_sec: visit.duration_sec,
                     point_count: visit.point_count,
+                    place_type_confidence: cluster?.place_type_confidence,
                     total_cluster_points: cluster?.total_points,
                     visit_count: cluster?.visit_count
                 };
