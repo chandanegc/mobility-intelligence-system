@@ -76,6 +76,7 @@ function printAllUsersResults(results) {
   const totalUpdated = results.reduce((s, r) => s + r.total_trips_updated, 0);
 
   console.log("\n────────── ALL USERS SUMMARY ──────────");
+  
   console.log(`users_processed: ${results.length}`);
   console.log(`total_created:   ${totalCreated}`);
   console.log(`total_updated:   ${totalUpdated}`);

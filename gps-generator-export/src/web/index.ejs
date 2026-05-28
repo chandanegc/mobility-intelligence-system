@@ -494,12 +494,199 @@
                 });
             }
 
-            function drawVisitPolyline(points) {
+            function getRoutePoint(point) {
+                return {
+                    lat: Number(point.lat),
+                    lng: Number(point.lng)
+                };
+            }
+
+            function isValidRoutePoint(point) {
+                return Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng));
+            }
+
+            function getRouteCacheKey(startPoint, endPoint) {
+                var start = getRoutePoint(startPoint);
+                var end = getRoutePoint(endPoint);
+
+                return [
+                    'mappls-route-v1',
+                    start.lat.toFixed(7),
+                    start.lng.toFixed(7),
+                    end.lat.toFixed(7),
+                    end.lng.toFixed(7)
+                ].join(':');
+            }
+
+            function getCachedRoutePath(cacheKey) {
+                try {
+                    var cachedRoute = JSON.parse(localStorage.getItem(cacheKey));
+
+                    if (
+                        cachedRoute &&
+                        Array.isArray(cachedRoute.path) &&
+                        cachedRoute.path.length
+                    ) {
+                        return cachedRoute.path.filter(isValidRoutePoint);
+                    }
+                } catch (error) {
+                    localStorage.removeItem(cacheKey);
+                }
+
+                return null;
+            }
+
+            function setCachedRoutePath(cacheKey, routePath) {
+                try {
+                    localStorage.setItem(cacheKey, JSON.stringify({
+                        savedAt: Date.now(),
+                        path: routePath
+                    }));
+                } catch (error) {
+                    console.warn('Route cache was not saved', error);
+                }
+            }
+
+            async function loadRealRoutePath(startPoint, endPoint) {
+                var cacheKey = getRouteCacheKey(startPoint, endPoint);
+                var cachedRoutePath = getCachedRoutePath(cacheKey);
+
+                if (cachedRoutePath && cachedRoutePath.length) {
+                    return cachedRoutePath;
+                }
+
+                var response = await fetch('/api/mappls/route', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        points: [
+                            getRoutePoint(startPoint),
+                            getRoutePoint(endPoint)
+                        ]
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Mappls route request failed');
+                }
+
+                var data = await response.json();
+                var routePath = data && data.path;
+
+                if (!Array.isArray(routePath) || !routePath.length) {
+                    throw new Error('Mappls route response did not include geometry');
+                }
+
+                routePath = routePath.filter(isValidRoutePoint);
+                setCachedRoutePath(cacheKey, routePath);
+
+                return routePath;
+            }
+
+            function addRoutePolyline(routePath, strokeColor, strokeOpacity, strokeWeight, fitbounds, animate) {
+                var polylineOptions = {
+                    map: map,
+                    paths: routePath,
+                    strokeColor: strokeColor,
+                    strokeOpacity: strokeOpacity,
+                    strokeWeight: strokeWeight,
+                    fitbounds: fitbounds
+                };
+
+                if (animate) {
+                    polylineOptions.animate = animate;
+                }
+
+                var polyline = new mappls.Polyline(polylineOptions);
+
+                polylines.push(polyline);
+                return polyline;
+            }
+
+            function waitForAnimationFrame() {
+                return new Promise(function(resolve) {
+                    window.requestAnimationFrame(resolve);
+                });
+            }
+
+            async function waitForAnimationFrames(frameCount) {
+                for (var frameIndex = 0; frameIndex < frameCount; frameIndex++) {
+                    await waitForAnimationFrame();
+                }
+            }
+
+            function flyToRoutePoint(point) {
+                if (!point || !isValidRoutePoint(point)) {
+                    return;
+                }
+
+                var center = [point.lng, point.lat];
+
+                if (typeof map.flyTo === 'function') {
+                    map.flyTo({
+                        center: center,
+                        zoom: 15.5,
+                        speed: 5
+                    });
+                    return;
+                }
+
+                map.setCenter(center);
+            }
+
+            async function fitRouteBounds(routePath) {
+                if (!routePath.length) {
+                    return;
+                }
+
+                addRoutePolyline(
+                    routePath,
+                    '#16a34a',
+                    0,
+                    1,
+                    true,
+                    null
+                );
+                await waitForAnimationFrames(18);
+            }
+
+            async function drawRouteSegmentStepByStep(routePath, strokeColor) {
+                var pointIndex = 0;
+                var pointsPerStep = Math.max(4, Math.ceil(routePath.length / 65));
+
+                if (routePath.length < 2) {
+                    return;
+                }
+
+                while (pointIndex < routePath.length - 1) {
+                    var nextIndex = Math.min(pointIndex + pointsPerStep, routePath.length - 1);
+                    var chunkPath = routePath.slice(pointIndex, nextIndex + 1);
+
+                    addRoutePolyline(
+                        chunkPath,
+                        strokeColor,
+                        1,
+                        7,
+                        false,
+                        null
+                    );
+
+                    pointIndex = nextIndex;
+                    flyToRoutePoint(routePath[pointIndex]);
+                    await waitForAnimationFrames(3);
+                }
+            }
+
+            async function drawVisitPolyline(points) {
                 var displayPath = points.map(function(point, index) {
                     return markerPositions[index] || point;
                 });
 
                 polylines = [];
+                var fullRoutePath = [];
+                var routeSegments = [];
                 var seenPointKeys = {};
 
                 if (points.length) {
@@ -509,21 +696,49 @@
                 for (var index = 1; index < points.length; index++) {
                     var destinationKey = getPointKey(points[index]);
                     var isReturningToSeenPoint = Boolean(seenPointKeys[destinationKey]);
-                    var strokeColor = isReturningToSeenPoint ? '#2563eb' : '#d93025';
+                    var strokeColor = isReturningToSeenPoint ? '#16a34a' : '#2563eb';
+                    var routePath = [displayPath[index - 1], displayPath[index]];
 
-                    polylines.push(new mappls.Polyline({
-                        map: map,
-                        paths: [displayPath[index - 1], displayPath[index]],
-                        strokeColor: strokeColor,
-                        strokeOpacity: 1.0,
-                        strokeWeight: 6,
-                        fitbounds: index === 1
-                    }));
+                    try {
+                        routePath = await loadRealRoutePath(points[index - 1], points[index]);
+                    } catch (error) {
+                        console.warn('Using direct line for route segment ' + index, error);
+                    }
 
+                    if (fullRoutePath.length && routePath.length) {
+                        fullRoutePath = fullRoutePath.concat(routePath.slice(1));
+                    } else {
+                        fullRoutePath = fullRoutePath.concat(routePath);
+                    }
+
+                    routeSegments.push({
+                        path: routePath,
+                        strokeColor: strokeColor
+                    });
                     seenPointKeys[destinationKey] = true;
                 }
+
+                if (fullRoutePath.length) {
+                    await fitRouteBounds(fullRoutePath);
+                    flyToRoutePoint(fullRoutePath[0]);
+                    await waitForAnimationFrames(12);
+                }
+
+                for (var segmentIndex = 0; segmentIndex < routeSegments.length; segmentIndex++) {
+                    setActivePoint(segmentIndex);
+                    await drawRouteSegmentStepByStep(
+                        routeSegments[segmentIndex].path,
+                        routeSegments[segmentIndex].strokeColor
+                    );
+                }
+
+                setActivePoint(points.length - 1);
+
+                if (fullRoutePath.length) {
+                    await fitRouteBounds(fullRoutePath);
+                }
             }
-console.log('egc');
+
             function renderPointList(points) {
                 var pointList = document.getElementById('pointList');
 
@@ -610,10 +825,10 @@ console.log('egc');
 	                return;
 	            }
 
-	            map.setCenter([pts[0].lat, pts[0].lng]);
+	            map.setCenter([pts[0].lng, pts[0].lat]);
                 addVisitMarkers(pts);
                 renderPointList(pts);
-                drawVisitPolyline(pts);
+                await drawVisitPolyline(pts);
         });
         }
     </script>

@@ -1,4 +1,5 @@
 import express from 'express';
+import axios from 'axios';
 import { generateGpsData, getGenerationStats, clearGpsData } from '../controllers/generateController.js';
 import { calculateTotalDistance } from '../controllers/journeyController.js';
 import {
@@ -16,6 +17,7 @@ import {
 } from '../controllers/userController.js';
 
 const router = express.Router();
+const MAPPLS_ACCESS_TOKEN = process.env.MAPPLS_ACCESS_TOKEN || 'vokkcycrqlivzvdfngabetjfojmgdzubghbx';
 
 function formatVisitTime(timestampSec) {
     if (typeof timestampSec !== 'number') {
@@ -181,6 +183,63 @@ router.get('/cluster-visits/polyline', async (req, res) => {
         res.status(500).json({
             message: 'Failed to load cluster visit points',
             error: error.message
+        });
+    }
+});
+
+router.post('/mappls/route', async (req, res) => {
+    try {
+        const points = Array.isArray(req.body?.points) ? req.body.points : [];
+        const routePoints = points
+            .map(point => ({
+                lat: Number(point.lat),
+                lng: Number(point.lng)
+            }))
+            .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+        if (routePoints.length < 2) {
+            return res.status(400).json({
+                message: 'At least two valid route points are required'
+            });
+        }
+
+        const geoPositions = routePoints
+            .map(point => `${point.lng},${point.lat}`)
+            .join(';');
+        const routeUrl = `https://route.mappls.com/route/direction/route_adv/driving/${geoPositions}`;
+        const { data } = await axios.get(routeUrl, {
+            params: {
+                geometries: 'geojson',
+                overview: 'full',
+                steps: false,
+                access_token: MAPPLS_ACCESS_TOKEN
+            }
+        });
+
+        const coordinates = data?.routes?.[0]?.geometry?.coordinates;
+
+        if (!Array.isArray(coordinates) || !coordinates.length) {
+            return res.status(502).json({
+                message: 'Mappls route response did not include geometry',
+                code: data?.code
+            });
+        }
+
+        res.json({
+            code: data.code,
+            duration: data.routes[0].duration,
+            distance: data.routes[0].distance,
+            path: coordinates
+                .map(coordinate => ({
+                    lat: Number(coordinate[1]),
+                    lng: Number(coordinate[0])
+                }))
+                .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lng))
+        });
+    } catch (error) {
+        res.status(error.response?.status || 500).json({
+            message: 'Failed to load Mappls route',
+            error: error.response?.data || error.message
         });
     }
 });

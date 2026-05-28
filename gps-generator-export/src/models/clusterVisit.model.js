@@ -48,7 +48,7 @@ const clusterVisitSchema = new mongoose.Schema(
       default: 0
     },
 
-    is_merged: {
+    is_merged: { 
       type: Boolean,
       default: false
     },

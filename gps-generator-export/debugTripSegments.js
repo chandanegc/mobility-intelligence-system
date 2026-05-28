@@ -28,6 +28,7 @@ function classifySkip({
   dayStart,
   dayEnd
 }) {
+  
   if (!tripStart || !tripEnd || !fromCluster || !toCluster) return "missing_fields";
 
   const durationSec = tripEnd - tripStart;
@@ -85,6 +86,7 @@ async function main() {
     const toCluster = toVisit.cluster_id;
 
     const reason = classifySkip({ tripStart, tripEnd, fromCluster, toCluster, dayStart, dayEnd });
+
     if (reason) {
       skipCounts[reason] = (skipCounts[reason] || 0) + 1;
     }
