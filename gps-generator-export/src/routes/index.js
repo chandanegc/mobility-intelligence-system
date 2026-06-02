@@ -8,7 +8,12 @@ import {
 } from '../controllers/mlController.js';
 import ClusterVisit from '../models/clusterVisit.model.js';
 import UserCluster from '../models/userCluster.model.js';
-import { getNextPlacePrediction } from '../controllers/predictionController.js';
+import { applyResolvedPlace } from '../utils/placeResolver.js';
+import {
+    getNextPlacePrediction,
+    getUserDayPrediction,
+    getUserTimePrediction
+} from '../controllers/predictionController.js';
 import {
     createUserGpsData,
     getUserGpsData,
@@ -63,6 +68,107 @@ router.post('/generate', generateGpsData);
  * Returns record counts grouped by user, activity_type, time_of_day
  */
 router.get('/stats', getGenerationStats);
+
+router.get('/predict/day', getUserDayPrediction);
+router.get('/predict/time', getUserTimePrediction);
+
+router.get('/user-clusters/polyline', async (req, res) => {
+    try {
+        const query = {};
+
+        if (req.query.user_id) {
+            query.user_id = req.query.user_id;
+        }
+
+        const clusters = await UserCluster.find(query, {
+            _id: 0,
+            avg_arrival_hour: 1,
+            avg_departure_hour: 1,
+            avg_duration_sec: 1,
+            center: 1,
+            center_location: 1,
+            cluster_id: 1,
+            day_visit_ratio: 1,
+            first_seen: 1,
+            last_seen: 1,
+            night_visit_ratio: 1,
+            place_name: 1,
+            place_type: 1,
+            place_type_confidence: 1,
+            radius_meters: 1,
+            total_duration_sec: 1,
+            total_points: 1,
+            user_id: 1,
+            visit_count: 1,
+            weekday_ratio: 1
+        })
+            .sort({ visit_count: -1, total_points: -1 })
+            .lean();
+
+        const points = clusters
+            .map(cluster => {
+                const commonFields = {
+                    avg_arrival_hour: cluster.avg_arrival_hour,
+                    avg_departure_hour: cluster.avg_departure_hour,
+                    avg_duration_sec: cluster.avg_duration_sec,
+                    cluster_id: cluster.cluster_id,
+                    cluster_name: cluster.place_name || cluster.place_type || cluster.cluster_id,
+                    day_visit_ratio: cluster.day_visit_ratio,
+                    first_seen: cluster.first_seen,
+                    last_seen: cluster.last_seen,
+                    night_visit_ratio: cluster.night_visit_ratio,
+                    place_name: cluster.place_name,
+                    place_type: cluster.place_type,
+                    place_type_confidence: cluster.place_type_confidence,
+                    radius_meters: cluster.radius_meters,
+                    total_duration_sec: cluster.total_duration_sec,
+                    total_points: cluster.total_points,
+                    user_id: cluster.user_id,
+                    visit_count: cluster.visit_count,
+                    weekday_ratio: cluster.weekday_ratio
+                };
+
+                if (
+                    typeof cluster.center?.lat === 'number' &&
+                    typeof cluster.center?.lng === 'number'
+                ) {
+                    return applyResolvedPlace({
+                        ...commonFields,
+                        lat: cluster.center.lat,
+                        lng: cluster.center.lng
+                    });
+                }
+
+                const coordinates = cluster.center_location?.coordinates;
+
+                if (
+                    Array.isArray(coordinates) &&
+                    coordinates.length >= 2 &&
+                    typeof coordinates[0] === 'number' &&
+                    typeof coordinates[1] === 'number'
+                ) {
+                    return applyResolvedPlace({
+                        ...commonFields,
+                        lat: coordinates[1],
+                        lng: coordinates[0]
+                    });
+                }
+
+                return null;
+            })
+            .filter(Boolean);
+
+        res.json({
+            count: points.length,
+            points
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Failed to load user clusters',
+            error: error.message
+        });
+    }
+});
 
 router.get('/cluster-visits/polyline', async (req, res) => {
     try {
@@ -137,7 +243,7 @@ router.get('/cluster-visits/polyline', async (req, res) => {
                     typeof visit.center?.lat === 'number' &&
                     typeof visit.center?.lng === 'number'
                 ) {
-                    return {
+                    return applyResolvedPlace({
                         ...commonFields,
                         lat: visit.center.lat,
                         lng: visit.center.lng,
@@ -146,7 +252,7 @@ router.get('/cluster-visits/polyline', async (req, res) => {
                         date: visit.date,
                         visit_start_time: formatVisitTime(visit.visit_start),
                         visit_end_time: formatVisitTime(visit.visit_end)
-                    };
+                    });
                 }
 
                 const coordinates = visit.center_location?.coordinates;
@@ -157,7 +263,7 @@ router.get('/cluster-visits/polyline', async (req, res) => {
                     typeof coordinates[0] === 'number' &&
                     typeof coordinates[1] === 'number'
                 ) {
-                    return {
+                    return applyResolvedPlace({
                         ...commonFields,
                         lat: coordinates[1],
                         lng: coordinates[0],
@@ -166,7 +272,7 @@ router.get('/cluster-visits/polyline', async (req, res) => {
                         date: visit.date,
                         visit_start_time: formatVisitTime(visit.visit_start),
                         visit_end_time: formatVisitTime(visit.visit_end)
-                    };
+                    });
                 }
 
                 return null;

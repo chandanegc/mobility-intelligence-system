@@ -2,7 +2,7 @@ import os
 from pymongo import MongoClient, ASCENDING, GEOSPHERE
 
 # Keep defaults aligned with Node service (.env)
-DEFAULT_MONGO_URL = "mongodb://10.10.21.44:27017/"
+DEFAULT_MONGO_URL = "mongodb://localhost:27017"
 DEFAULT_DB_NAME = "gps_tracking_ai"
 
 MONGO_URL = os.environ.get("MONGO_URL", DEFAULT_MONGO_URL)

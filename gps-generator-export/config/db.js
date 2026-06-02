@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const DEFAULT_MONGO_URI = "mongodb://10.10.21.44:27017/gps_tracking_ai";
+const DEFAULT_MONGO_URI = "mongodb://127.0.0.1:27017/gps_tracking_ai";
 
 export async function connectDB() {
   const uri = process.env.MONGO_URI || DEFAULT_MONGO_URI;

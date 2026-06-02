@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
 import connectDB from '../config/db.js';
+
 import routes from './routes/index.js';
 
 import cors from 'cors';

@@ -107,6 +107,69 @@
                 gap: 10px;
               }
 
+              .prediction-controls {
+                border-bottom: 1px solid #e5e7eb;
+                display: grid;
+                gap: 10px;
+                margin: 0 -16px 14px;
+                padding: 0 16px 14px;
+              }
+
+              .control-label {
+                color: #374151;
+                display: grid;
+                font-size: 12px;
+                font-weight: 700;
+                gap: 6px;
+              }
+
+              .control-input {
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                box-sizing: border-box;
+                color: #111827;
+                font-size: 14px;
+                height: 38px;
+                padding: 0 10px;
+                width: 100%;
+              }
+
+              .prediction-actions {
+                display: grid;
+                gap: 8px;
+                grid-template-columns: 1fr 1fr;
+              }
+
+              .prediction-button {
+                background: #111827;
+                border: 1px solid #111827;
+                border-radius: 6px;
+                color: #fff;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 700;
+                height: 38px;
+              }
+
+              .prediction-button.secondary {
+                background: #fff;
+                color: #111827;
+              }
+
+              .prediction-button:disabled {
+                cursor: not-allowed;
+                opacity: .55;
+              }
+
+              .point-list-state {
+                border: 1px dashed #d1d5db;
+                border-radius: 8px;
+                color: #4b5563;
+                font-size: 13px;
+                line-height: 1.45;
+                padding: 12px;
+              }
+
               .point-item {
                 border: 1px solid #e5e7eb;
                 border-radius: 8px;
@@ -212,12 +275,26 @@
                         <aside id="pointPanel">
                             <div class="point-panel-header">
                                 <div>
-                                    <h2>Stay Points</h2> <br>
-                                    <span id="visitCountBadge">Visit Count: 0</span>
+                                    <h2>User Clusters</h2> <br>
+                                    <span id="visitCountBadge">Cluster Count: 0</span>
                                 </div>
                                 <button id="closePanelButton" type="button" aria-label="Close visit points">
                                     <span aria-hidden="true">&times;</span>
                                 </button>
+                            </div>
+                            <div class="prediction-controls">
+                                <label class="control-label">
+                                    Day
+                                    <input id="predictionDate" class="control-input" type="date">
+                                </label>
+                                <label class="control-label">
+                                    Time
+                                    <input id="predictionTime" class="control-input" type="time">
+                                </label>
+                                <div class="prediction-actions">
+                                    <button id="predictDayButton" class="prediction-button" type="button">Day Route</button>
+                                    <button id="predictTimeButton" class="prediction-button secondary" type="button">Time Point</button>
+                                </div>
                             </div>
                             <div id="pointList"></div>
                         </aside>
@@ -225,11 +302,20 @@
                     </div>
 	                        <script>
 		        var map,polylines = [],markers = [],markerPositions = [];
-	        async function loadClusterVisitPoints() {
-	            const response = await fetch('https://development.mapmyindia.com/ai/pocdata');
+            var activePoints = [];
+            var currentBadgeLabel = 'Cluster Count';
+            var userId = 'U123';
+
+            function buildApiUrl(path, params) {
+                var query = new URLSearchParams(params);
+                return path + '?' + query.toString();
+            }
+
+	        async function loadUserClusterPoints() {
+	            const response = await fetch(buildApiUrl('/api/user-clusters/polyline', { user_id: userId }));
 
             if (!response.ok) {
-                throw new Error('Failed to load cluster visit points');
+                throw new Error('Failed to load user cluster points');
             }
 
             const data = await response.json();
@@ -238,11 +324,62 @@
 	            return points;
 	        }
 
-            function updateVisitCount(count) {
+            async function loadPredictedDayPoints(dateText) {
+                const response = await fetch(buildApiUrl('/api/predict/day', {
+                    user_id: userId,
+                    date: dateText
+                }));
+
+                if (!response.ok) {
+                    throw new Error('Failed to load day prediction');
+                }
+
+                const payload = await response.json();
+                const prediction = payload.data || {};
+
+                return (prediction.predicted_schedule || [])
+                    .filter(function(point) {
+                        return Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng));
+                    })
+                    .map(function(point) {
+                        return {
+                            ...point,
+                            display_mode: 'prediction_day'
+                        };
+                    });
+            }
+
+            async function loadPredictedTimePoint(dateText, timeText) {
+                const response = await fetch(buildApiUrl('/api/predict/time', {
+                    user_id: userId,
+                    date: dateText,
+                    time: timeText
+                }));
+
+                if (!response.ok) {
+                    throw new Error('Failed to load time prediction');
+                }
+
+                const payload = await response.json();
+                const point = payload.data && payload.data.prediction;
+
+                if (!point || !Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lng))) {
+                    return [];
+                }
+
+                return [{
+                    ...point,
+                    display_mode: 'prediction_time',
+                    selected_time: timeText
+                }];
+            }
+
+            function updateVisitCount(count, label) {
                 var visitCountBadge = document.getElementById('visitCountBadge');
                 var safeCount = Number(count) || 0;
+                var badgeLabel = label || currentBadgeLabel;
 
-                visitCountBadge.textContent = 'Visit Count: ' + safeCount;
+                visitCountBadge.textContent = badgeLabel + ': ' + safeCount;
             }
 
             function getFirstValue(point, keys) {
@@ -349,6 +486,20 @@
                 return getFirstValue(point, ['visit_count', 'visitCount']);
             }
 
+            function getClusterRadius(point) {
+                return getFirstValue(point, ['radius_meters', 'radiusMeters']);
+            }
+
+            function getAverageDuration(point) {
+                var durationValue = getFirstValue(point, ['avg_duration_sec', 'avgDurationSec']);
+
+                if (durationValue === null) {
+                    return null;
+                }
+
+                return formatDurationSeconds(durationValue);
+            }
+
             function getClusterName(point, fallbackLabel) {
                 return getFirstValue(point, [
                     'cluster_name',
@@ -402,6 +553,29 @@
                 return Math.round(confidence) + '%';
             }
 
+            function removeMapObject(item) {
+                if (!item) {
+                    return;
+                }
+
+                if (typeof item.remove === 'function') {
+                    item.remove();
+                    return;
+                }
+
+                if (typeof item.setMap === 'function') {
+                    item.setMap(null);
+                }
+            }
+
+            function clearMapOverlays() {
+                markers.forEach(removeMapObject);
+                polylines.forEach(removeMapObject);
+                markers = [];
+                polylines = [];
+                markerPositions = [];
+            }
+
             function getMarkerPosition(point, duplicateIndex, duplicateCount) {
                 var lat = Number(point.lat);
                 var lng = Number(point.lng);
@@ -425,6 +599,10 @@
                 return Number(point.lat).toFixed(7) + '_' + Number(point.lng).toFixed(7);
             }
 
+            function setMapCenter(point) {
+                map.setCenter([Number(point.lng), Number(point.lat)]);
+            }
+
             function setActivePoint(pointIndex) {
                 document.querySelectorAll('.point-item').forEach(function(item) {
                     item.classList.toggle(
@@ -436,8 +614,9 @@
                 document.querySelectorAll('.visit-map-marker').forEach(function(markerElement) {
                     var label = Number(markerElement.getAttribute('data-marker-label'));
                     var isActive = label === pointIndex + 1;
+                    var baseColor = markerElement.getAttribute('data-marker-color') || '#1d4ed8';
 
-                    markerElement.style.background = isActive ? '#d93025' : '#1d4ed8';
+                    markerElement.style.background = isActive ? '#d93025' : baseColor;
                     markerElement.style.transform = isActive ? 'scale(1.15)' : 'scale(1)';
                 });
             }
@@ -461,26 +640,29 @@
 
                     var position = getMarkerPosition(point, duplicateIndex, duplicateCounts[key]);
                     markerPositions[index] = position;
-                    var startTime = getVisitStart(point) || '-';
-                    var endTime = getVisitEnd(point) || '-';
-                    var duration = getVisitDuration(point);
                     var clusterName = getClusterName(point, 'Point ' + label);
                     var pointCount = getClusterPointCount(point);
                     var confidence = formatConfidence(getClusterConfidence(point));
                     var visitCount = getPointVisitCount(point);
+                    var radius = getClusterRadius(point);
+                    var avgDuration = getAverageDuration(point);
+                    var markerColor = point.display_mode === 'prediction_time' ? '#d93025' : '#1d4ed8';
+                    var titlePrefix = point.display_mode === 'prediction_time' ? 'Predicted Point ' : 'Cluster ';
                     var popupHtml = [
                         '<div>',
-                        '<strong>Point ' + label + '</strong><br>',
+                        '<strong>' + titlePrefix + label + '</strong><br>',
                         'Cluster: ' + clusterName + '<br>',
+                        'Type: ' + (point.place_type || '-') + '<br>',
+                        point.start_time ? 'Start: ' + point.start_time + '<br>' : '',
+                        point.end_time ? 'End: ' + point.end_time + '<br>' : '',
+                        point.selected_time ? 'Selected Time: ' + point.selected_time + '<br>' : '',
                         confidence !== null ? 'Confidence: ' + confidence + '<br>' : '',
                         pointCount !== null ? 'Point Count: ' + pointCount + '<br>' : '',
-                        'Day: ' + (point.day_of_week || '-') + '<br>',
-                        'Time: ' + (point.time_of_day || '-') + '<br>',
-                        'Start Time: ' + startTime + '<br>',
-                        'End Time: ' + endTime + '<br>',
-                        'Duration: ' + duration + '<br>',
                         visitCount !== null ? 'Visit Count: ' + visitCount + '<br>' : '',
-                        'Date: ' + (point.date || '-'),
+                        avgDuration !== null ? 'Avg Duration: ' + avgDuration + '<br>' : '',
+                        radius !== null ? 'Radius: ' + Math.round(Number(radius)) + 'm<br>' : '',
+                        'Lat: ' + Number(point.lat).toFixed(7) + '<br>',
+                        'Lng: ' + Number(point.lng).toFixed(7),
                         '</div>'
                     ].join('');
 
@@ -489,7 +671,7 @@
                         position: position,
                         popupHtml: popupHtml,
                         draggable: false,
-                        html: '<div class="visit-map-marker" data-marker-label="' + label + '" style="align-items:center;background:#1d4ed8;border:2px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,.35);color:#fff;display:flex;font:700 13px Arial,sans-serif;height:30px;justify-content:center;min-width:30px;padding:0 4px;transition:background .15s ease,transform .15s ease;white-space:nowrap;">' + label + '</div>'
+                        html: '<div class="visit-map-marker" data-marker-label="' + label + '" data-marker-color="' + markerColor + '" style="align-items:center;background:' + markerColor + ';border:2px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,.35);color:#fff;display:flex;font:700 13px Arial,sans-serif;height:30px;justify-content:center;min-width:30px;padding:0 4px;transition:background .15s ease,transform .15s ease;white-space:nowrap;">' + label + '</div>'
                     });
                 });
             }
@@ -523,34 +705,38 @@
                     seenPointKeys[destinationKey] = true;
                 }
             }
-console.log('egc');
             function renderPointList(points) {
                 var pointList = document.getElementById('pointList');
 
+                if (!points.length) {
+                    pointList.innerHTML = '<div class="point-list-state">No user clusters found. Generate/process GPS data first, then run clustering.</div>';
+                    return;
+                }
+
                 pointList.innerHTML = points.map(function(point, index) {
                     var label = String(index + 1);
-                    var startTime = getVisitStart(point) || '-';
-                    var endTime = getVisitEnd(point) || '-';
-                    var duration = getVisitDuration(point);
                     var clusterName = getClusterName(point, 'Point ' + label);
                     var pointCount = getClusterPointCount(point);
                     var confidence = formatConfidence(getClusterConfidence(point));
                     var visitCount = getPointVisitCount(point);
+                    var radius = getClusterRadius(point);
+                    var avgDuration = getAverageDuration(point);
+                    var titlePrefix = point.display_mode === 'prediction_time' ? 'Predicted Point ' : 'Cluster ';
 
                     return [
                         '<div class="point-item" data-point-index="' + index + '">',
-                        '<div class="point-title">Point ' + label + ' - ' + clusterName + '</div>',
+                        '<div class="point-title">' + titlePrefix + label + ' - ' + clusterName + '</div>',
                         '<div class="point-meta">',
-                        'Cluster: ' + clusterName + '<br>',
+                        'Cluster ID: ' + (point.cluster_id || '-') + '<br>',
+                        'Type: ' + (point.place_type || '-') + '<br>',
+                        point.start_time ? 'Start: ' + point.start_time + '<br>' : '',
+                        point.end_time ? 'End: ' + point.end_time + '<br>' : '',
+                        point.selected_time ? 'Selected Time: ' + point.selected_time + '<br>' : '',
                         confidence !== null ? 'Confidence: ' + confidence + '<br>' : '',
                         pointCount !== null ? 'Point Count: ' + pointCount + '<br>' : '',
-                        'Day: ' + (point.day_of_week || '-') + '<br>',
-                        'Time: ' + (point.time_of_day || '-') + '<br>',
-                        'Start Time: ' + startTime + '<br>',
-                        'End Time: ' + endTime + '<br>',
-                        'Duration: ' + duration + '<br>',
                         visitCount !== null ? 'Visit Count: ' + visitCount + '<br>' : '',
-                        'Date: ' + (point.date || '-') + '<br>',
+                        avgDuration !== null ? 'Avg Duration: ' + avgDuration + '<br>' : '',
+                        radius !== null ? 'Radius: ' + Math.round(Number(radius)) + 'm<br>' : '',
                         'Lat: ' + Number(point.lat).toFixed(7) + '<br>',
                         'Lng: ' + Number(point.lng).toFixed(7),
                         '</div>',
@@ -558,7 +744,7 @@ console.log('egc');
                     ].join('');
                 }).join('');
 
-                pointList.addEventListener('click', function(event) {
+                pointList.onclick = function(event) {
                     var item = event.target.closest('.point-item');
 
                     if (!item) {
@@ -572,14 +758,40 @@ console.log('egc');
                         return;
                     }
 
-                    map.setCenter([position.lng, position.lat]);
+                    setMapCenter(position);
                     map.setZoom(17);
                     setActivePoint(pointIndex);
 
                     if (window.matchMedia('(max-width: 768px)').matches) {
                         closePointPanel();
                     }
-                });
+                };
+            }
+
+            function renderMapPoints(points, options) {
+                var settings = options || {};
+                activePoints = points;
+                currentBadgeLabel = settings.badgeLabel || 'Point Count';
+
+                clearMapOverlays();
+                updateVisitCount(points.length, currentBadgeLabel);
+                renderPointList(points);
+
+                if (!points.length) {
+                    if (settings.emptyText) {
+                        document.getElementById('pointList').innerHTML = '<div class="point-list-state">' + settings.emptyText + '</div>';
+                    }
+                    return;
+                }
+
+                setMapCenter(points[0]);
+                addVisitMarkers(points);
+
+                if (settings.drawPolyline !== false && points.length > 1) {
+                    drawVisitPolyline(points);
+                }
+
+                setActivePoint(0);
             }
 
             function openPointPanel() {
@@ -596,6 +808,87 @@ console.log('egc');
             document.getElementById('closePanelButton').addEventListener('click', closePointPanel);
             document.getElementById('panelBackdrop').addEventListener('click', closePointPanel);
 
+            function setPredictionLoading(isLoading) {
+                document.getElementById('predictDayButton').disabled = isLoading;
+                document.getElementById('predictTimeButton').disabled = isLoading;
+            }
+
+            function getSelectedDate() {
+                return document.getElementById('predictionDate').value ||
+                    new Date().toISOString().slice(0, 10);
+            }
+
+            function getSelectedTime() {
+                return document.getElementById('predictionTime').value;
+            }
+
+            async function showPredictedDay() {
+                var dateText = getSelectedDate();
+
+                setPredictionLoading(true);
+                document.getElementById('pointList').innerHTML = '<div class="point-list-state">Loading predicted day route...</div>';
+
+                try {
+                    var points = await loadPredictedDayPoints(dateText);
+                    renderMapPoints(points, {
+                        badgeLabel: 'Predicted Stops',
+                        drawPolyline: true,
+                        emptyText: 'No predicted route found for this day.'
+                    });
+                } catch (error) {
+                    console.error(error);
+                    clearMapOverlays();
+                    updateVisitCount(0, 'Predicted Stops');
+                    document.getElementById('pointList').innerHTML = '<div class="point-list-state">Failed to load day prediction.</div>';
+                } finally {
+                    setPredictionLoading(false);
+                }
+            }
+
+            async function showPredictedTime() {
+                var dateText = getSelectedDate();
+                var timeText = getSelectedTime();
+
+                if (!timeText) {
+                    document.getElementById('pointList').innerHTML = '<div class="point-list-state">Select a time first.</div>';
+                    updateVisitCount(0, 'Predicted Points');
+                    return;
+                }
+
+                setPredictionLoading(true);
+                document.getElementById('pointList').innerHTML = '<div class="point-list-state">Loading predicted point...</div>';
+
+                try {
+                    var points = await loadPredictedTimePoint(dateText, timeText);
+                    renderMapPoints(points, {
+                        badgeLabel: 'Predicted Points',
+                        drawPolyline: false,
+                        emptyText: 'No predicted point found for this time.'
+                    });
+                } catch (error) {
+                    console.error(error);
+                    clearMapOverlays();
+                    updateVisitCount(0, 'Predicted Points');
+                    document.getElementById('pointList').innerHTML = '<div class="point-list-state">Failed to load time prediction.</div>';
+                } finally {
+                    setPredictionLoading(false);
+                }
+            }
+
+            function initializePredictionControls() {
+                var dateInput = document.getElementById('predictionDate');
+                dateInput.value = new Date().toISOString().slice(0, 10);
+
+                document.getElementById('predictDayButton').addEventListener('click', showPredictedDay);
+                document.getElementById('predictTimeButton').addEventListener('click', showPredictedTime);
+                dateInput.addEventListener('change', showPredictedDay);
+                document.getElementById('predictionTime').addEventListener('change', function() {
+                    if (getSelectedTime()) {
+                        showPredictedTime();
+                    }
+                });
+            }
+
 	        function initMap1() {
             map = new mappls.Map('map', {
                 center: [28.61, 77.23],
@@ -604,16 +897,27 @@ console.log('egc');
             });
             map.setMaxZoom(17.7);
             map.addListener('load', async function() {
-            var pts = await loadClusterVisitPoints();
+            initializePredictionControls();
+            var pts = [];
+
+            try {
+                pts = await loadUserClusterPoints();
+            } catch (error) {
+                console.error(error);
+                updateVisitCount(0);
+                document.getElementById('pointList').innerHTML = '<div class="point-list-state">Failed to load user clusters from /api/user-clusters/polyline.</div>';
+                return;
+            }
 
 	            if (!pts.length) {
+                    renderPointList(pts);
 	                return;
 	            }
 
-	            map.setCenter([pts[0].lat, pts[0].lng]);
-                addVisitMarkers(pts);
-                renderPointList(pts);
-                drawVisitPolyline(pts);
+                renderMapPoints(pts, {
+                    badgeLabel: 'Cluster Count',
+                    drawPolyline: false
+                });
         });
         }
     </script>

@@ -33,13 +33,45 @@ const userClusterSchema = new mongoose.Schema(
 
     place_type: {
       type: String,
-      enum: ["HOME", "OFFICE", "GYM", "CAFE", "OTHER", null],
+      enum: [
+        "AIRPORT",
+        "BANK",
+        "BOOK_STORE",
+        "CAFE",
+        "CINEMA",
+        "COFFEE_SHOP",
+        "COWORKING",
+        "DOCTOR",
+        "FAMILY_HOME",
+        "FRIEND_HOME",
+        "GROCERY",
+        "GYM",
+        "HOME",
+        "LAKE",
+        "LIBRARY",
+        "LUNCH",
+        "MALL",
+        "MARKET",
+        "METRO",
+        "NIGHTOUT",
+        "OFFICE",
+        "OTHER",
+        "PARK",
+        "PETROL_PUMP",
+        "PHARMACY",
+        "REPAIR_SHOP",
+        "SALON",
+        "SPORTS",
+        "STREET_FOOD",
+        "TEMPLE",
+        null
+      ],
       default: null
     },
 
     place_type_source: {
       type: String,
-      enum: ["rule", "google_api", "ml", "manual", null],
+      enum: ["rule", "google_api", "ml", "manual", "known_generated_location", null],
       default: null
     },
 
