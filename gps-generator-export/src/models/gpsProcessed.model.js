@@ -31,7 +31,25 @@ const gpsProcessedSchema = new mongoose.Schema(
     lat: Number,
     lng: Number,
 
+    raw_lat: Number,
+    raw_lng: Number,
+
     location: pointSchema,
+
+    gps_accuracy_m: {
+      type: Number,
+      default: null
+    },
+
+    gps_quality_score: {
+      type: Number,
+      default: 1
+    },
+
+    is_sparse_point: {
+      type: Boolean,
+      default: false
+    },
 
     activity_type: {
       type: String,
@@ -65,6 +83,31 @@ const gpsProcessedSchema = new mongoose.Schema(
       default: 0
     },
 
+    stay_confidence: {
+      type: Number,
+      default: 0
+    },
+
+    stay_radius_m: {
+      type: Number,
+      default: null
+    },
+
+    stay_distance_from_anchor_m: {
+      type: Number,
+      default: null
+    },
+
+    stay_point_count: {
+      type: Number,
+      default: 0
+    },
+
+    stay_reason: {
+      type: String,
+      default: null
+    },
+
     cluster_id: {
       type: String,
       default: null,
@@ -72,6 +115,11 @@ const gpsProcessedSchema = new mongoose.Schema(
     },
 
     distance_from_prev: {
+      type: Number,
+      default: 0
+    },
+
+    raw_distance_from_prev: {
       type: Number,
       default: 0
     },
@@ -92,6 +140,11 @@ const gpsProcessedSchema = new mongoose.Schema(
     },
 
     calculated_speed_kmph: {
+      type: Number,
+      default: 0
+    },
+
+    raw_calculated_speed_kmph: {
       type: Number,
       default: 0
     },

@@ -651,7 +651,6 @@ async function generateOneDailyCycle(cycleNo) {
 async function main() {
   await connectDB();
 
-  // Fresh data chahiye to uncomment karo
   await GpsRaw.deleteMany({ user_id: userId });
 
   for (let cycle = 1; cycle <= CYCLES_TO_GENERATE; cycle++) {

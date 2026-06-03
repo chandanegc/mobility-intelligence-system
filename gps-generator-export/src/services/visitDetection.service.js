@@ -32,6 +32,7 @@ function getDateParts(timestampSec) {
 
 function createVisit({ userId, clusterId, startPoint, prevClusterId }) {
   const meta = getDateParts(startPoint.gps_TimeStamp);
+  const confidence = Number(startPoint.stay_confidence || 0);
 
   return {
     user_id: userId,
@@ -52,6 +53,10 @@ function createVisit({ userId, clusterId, startPoint, prevClusterId }) {
     next_cluster_id: null,
 
     point_count: 1,
+    confidence_sum: confidence,
+    confidence_min: confidence || null,
+    confidence: confidence,
+    inferred_from: ["cluster_id", "stay_detection", "dwell_time"],
     is_merged: false,
     date: meta.date,
 
@@ -66,6 +71,9 @@ function closeVisit(visit, endPoint, nextClusterId = null) {
   visit.duration_sec = visit.visit_end - visit.visit_start;
   visit.departure_hour = meta.hour;
   visit.next_cluster_id = nextClusterId;
+  visit.confidence = visit.point_count
+    ? Number((visit.confidence_sum / visit.point_count).toFixed(2))
+    : 0;
 
   return visit;
 }
@@ -96,7 +104,17 @@ function tryMergeVisits(visits) {
       prev.visit_end = curr.visit_end;
       prev.duration_sec = prev.visit_end - prev.visit_start;
       prev.departure_hour = curr.departure_hour;
+      prev.confidence_sum += curr.confidence_sum;
+      prev.confidence_min =
+        prev.confidence_min === null || prev.confidence_min === undefined
+          ? curr.confidence_min
+          : curr.confidence_min === null || curr.confidence_min === undefined
+            ? prev.confidence_min
+            : Math.min(prev.confidence_min, curr.confidence_min);
       prev.point_count += curr.point_count;
+      prev.confidence = prev.point_count
+        ? Number((prev.confidence_sum / prev.point_count).toFixed(2))
+        : 0;
       prev.is_merged = true;
       prev.next_cluster_id = curr.next_cluster_id;
     } else {
@@ -139,6 +157,12 @@ export function detectClusterVisits(points) {
 
     if (point.cluster_id === currentVisit.cluster_id) {
       currentVisit.point_count += 1;
+      const confidence = Number(point.stay_confidence || 0);
+      currentVisit.confidence_sum += confidence;
+      currentVisit.confidence_min =
+        currentVisit.confidence_min === null
+          ? confidence
+          : Math.min(currentVisit.confidence_min, confidence);
       prevPoint = point;
       continue;
     }

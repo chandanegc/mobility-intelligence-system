@@ -48,6 +48,26 @@ const clusterVisitSchema = new mongoose.Schema(
       default: 0
     },
 
+    confidence: {
+      type: Number,
+      default: 0
+    },
+
+    confidence_sum: {
+      type: Number,
+      default: 0
+    },
+
+    confidence_min: {
+      type: Number,
+      default: null
+    },
+
+    inferred_from: {
+      type: [String],
+      default: undefined
+    },
+
     is_merged: { 
       type: Boolean,
       default: false

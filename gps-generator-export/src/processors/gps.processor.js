@@ -13,6 +13,10 @@ import { detectAnomaly } from "../services/anomaly.service.js";
 import { detectActivity } from "../services/activity.service.js";
 import { detectTrip } from "../services/trip.service.js";
 import { detectStay } from "../services/stay.service.js";
+import {
+  scoreGpsQuality,
+  smoothGpsPoint
+} from "../services/gpsQuality.service.js";
 
 function createEmptyState(lastProcessed = null) {
   return {
@@ -33,7 +37,16 @@ function createEmptyState(lastProcessed = null) {
     stoppedSince: null,
 
     stayAnchor: null,
-    stayStartTime: null
+    stayStartTime: null,
+    stayPointCount: 0,
+    stayDistanceSum: 0,
+
+    filteredPoint: lastProcessed
+      ? {
+          lat: lastProcessed.lat,
+          lng: lastProcessed.lng
+        }
+      : null
   };
 }
 
@@ -42,6 +55,9 @@ function resetMovementState(state) {
   state.stoppedSince = null;
   state.stayAnchor = null;
   state.stayStartTime = null;
+  state.stayPointCount = 0;
+  state.stayDistanceSum = 0;
+  state.filteredPoint = null;
 }
 
 function buildProcessedPoint(raw, state) {
@@ -78,10 +94,35 @@ function buildProcessedPoint(raw, state) {
     resetMovementState(state);
   }
 
+  const filteredPoint = anomaly.isAnomaly
+    ? {
+        lat: raw.lat,
+        lng: raw.lng
+      }
+    : smoothGpsPoint({
+        raw,
+        previousFiltered: state.filteredPoint
+      });
+
+  const filteredCurr = {
+    ...raw,
+    lat: filteredPoint.lat,
+    lng: filteredPoint.lng
+  };
+
+  const filteredDistanceFromPrev = prev
+    ? haversineDistance(prev.lat, prev.lng, filteredCurr.lat, filteredCurr.lng)
+    : 0;
+
+  const filteredCalculatedSpeedKmph = getCalculatedSpeedKmph(
+    filteredDistanceFromPrev,
+    timeGap
+  );
+
   const activityType = detectActivity({
     rawSpeedKmph: raw.speed,
-    calculatedSpeedKmph,
-    distanceFromPrev,
+    calculatedSpeedKmph: filteredCalculatedSpeedKmph,
+    distanceFromPrev: filteredDistanceFromPrev,
     timeGap,
     isAnomaly: anomaly.isAnomaly
   });
@@ -95,10 +136,16 @@ function buildProcessedPoint(raw, state) {
       });
 
   const stay = detectStay({
-    curr: raw,
+    curr: filteredCurr,
     state,
     activityType,
-    isAnomaly: anomaly.isAnomaly
+    isAnomaly: anomaly.isAnomaly,
+    timeGap
+  });
+
+  const gpsQualityScore = scoreGpsQuality({
+    accuracy: raw.accuracy,
+    timeGap
   });
 
   const processed = {
@@ -110,30 +157,45 @@ function buildProcessedPoint(raw, state) {
 
     gps_TimeStamp: raw.gps_TimeStamp,
 
-    lat: raw.lat,
-    lng: raw.lng,
+    raw_lat: raw.lat,
+    raw_lng: raw.lng,
 
-    location: raw.location || {
+    lat: filteredCurr.lat,
+    lng: filteredCurr.lng,
+
+    location: {
       type: "Point",
-      coordinates: [raw.lng, raw.lat]
+      coordinates: [filteredCurr.lng, filteredCurr.lat]
     },
 
+    gps_accuracy_m: raw.accuracy ?? null,
+    gps_quality_score: gpsQualityScore,
+    is_sparse_point: timeGap > TIME.SPARSE_POINT_GAP_SEC,
+
     activity_type: activityType,
-    activity_confidence: activityType === "UNKNOWN" ? 0 : 1,
+    activity_confidence:
+      activityType === "UNKNOWN" ? 0 : Number(gpsQualityScore.toFixed(2)),
 
     trip_id: tripId,
 
     is_stay_point: stay.is_stay_point,
     stay_start_time: stay.stay_start_time,
     stay_duration: stay.stay_duration,
+    stay_confidence: stay.stay_confidence,
+    stay_radius_m: stay.stay_radius_m,
+    stay_distance_from_anchor_m: stay.stay_distance_from_anchor_m,
+    stay_point_count: stay.stay_point_count,
+    stay_reason: stay.stay_reason,
 
     cluster_id: null,
 
-    distance_from_prev: Number(distanceFromPrev.toFixed(2)),
+    distance_from_prev: Number(filteredDistanceFromPrev.toFixed(2)),
+    raw_distance_from_prev: Number(distanceFromPrev.toFixed(2)),
     time_gap: timeGap,
     speed_change: Number(speedChange.toFixed(2)),
     heading_change: Number(hChange.toFixed(2)),
-    calculated_speed_kmph: Number(calculatedSpeedKmph.toFixed(2)),
+    calculated_speed_kmph: Number(filteredCalculatedSpeedKmph.toFixed(2)),
+    raw_calculated_speed_kmph: Number(calculatedSpeedKmph.toFixed(2)),
 
     is_anomaly: anomaly.isAnomaly,
     anomaly_reason: anomaly.reason,
@@ -146,12 +208,16 @@ function buildProcessedPoint(raw, state) {
     _id: raw._id,
     user_id: raw.user_id,
     gps_TimeStamp: raw.gps_TimeStamp,
-    lat: raw.lat,
-    lng: raw.lng,
+    lat: filteredCurr.lat,
+    lng: filteredCurr.lng,
     speed: raw.speed || 0,
     heading: raw.heading || 0,
     trip_id: processed.trip_id
   };
+
+  if (!anomaly.isAnomaly) {
+    state.filteredPoint = filteredPoint;
+  }
 
   return processed;
 }
